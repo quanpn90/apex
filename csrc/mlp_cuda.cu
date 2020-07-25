@@ -1032,7 +1032,7 @@ int mlp_fp(
     int num_SMs = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
     // Call biasReLU
     if(use_bias == 1) {
-      if (activation == 0) { // no activation
+      if ((activation == 0) || (layer == (num_layers-1))) { // no activation or final layer
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks, biasAdd_fprop<T>, BIAS_RELU_FW_NTHREADS, 0);
         biasAdd_fprop<<<num_SMs*num_blocks, BIAS_RELU_FW_NTHREADS, 0, stream>>>(output, bias, batch_size, input_size);
       } else if (activation == 1) { // relu
@@ -1046,10 +1046,10 @@ int mlp_fp(
       }
     } else {
       // don't need to do anything in case of no activation and no bias
-      if (activation == 1) { // relu
+      if ((activation == 1) && (layer < (num_layers-1))) { // relu
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks, Relu_fprop<T>, BIAS_RELU_FW_NTHREADS, 0);
         Relu_fprop<<<num_SMs*num_blocks, BIAS_RELU_FW_NTHREADS, 0, stream>>>(output, batch_size, input_size);
-      } else if (activation == 2) { // sigmoid
+      } else if ((activation == 2) && (layer < (num_layers-1))) { // sigmoid
         cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks, Sigmoid_fprop<T>, BIAS_RELU_FW_NTHREADS, 0);
         Sigmoid_fprop<<<num_SMs*num_blocks, BIAS_RELU_FW_NTHREADS, 0, stream>>>(output, batch_size, input_size);
       }
@@ -1144,7 +1144,7 @@ int mlp_bp(
     float zero = 0.f;
 
     if (use_bias == 1) {
-      if (activation == 0) { // no acitvation
+      if ((activation == 0) || (layer == (num_layers - 1))) { // no activation
         // bgrad
         dim3 block(BIAS_RELU_BW_NTHREADS_X, BIAS_RELU_BW_NTHREADS_Y);
         int grid_x, grid_y;
@@ -1202,7 +1202,7 @@ int mlp_bp(
           dy_gemm, yfeat, batch_size, db_scratch, semaphores, dbias);
       }
     } else { // no bias below
-      if (activation == 0) {
+      if ((activation == 0) || (layer == (num_layers - 1)))   {
         // bypass dgrad through reset pointer
         dy_gemm = dy;
       } else if (activation == 1) { // relu
